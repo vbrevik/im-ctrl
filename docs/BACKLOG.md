@@ -600,6 +600,7 @@ All domain objects share three generic tables — no dedicated tables per type:
 | ID | Item | Priority | Effort | Description |
 |----|------|----------|--------|-------------|
 | F.3 | **More entity types** | Medium | Variable | Extend the platform with project and task entity types. Document entity type already implemented (model + handlers + templates + routes). The EAV model requires zero schema migrations — just new model files, handlers, and templates per type. |
+| F.4 | **Data label authority for llm-tune** | High (needed at llm-tune authority cut-over, weeks out) | M | im-ctrl becomes system of record for STANAG 4774-shaped labels (classification ordered, need-to-know categories as compartments with subset test), 5636-shaped core metadata, document precedence (`governed_by`, `supersedes`, `part_of`) and derived-asset label computation; plus an unattended export with `export_revision` and an initial import of llm-tune `labels.yaml`. Design: `docs/plans/2026-10-30-data-label-authority-design.md`. |
 
 ---
 
