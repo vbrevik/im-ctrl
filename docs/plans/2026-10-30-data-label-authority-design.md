@@ -164,3 +164,10 @@ escape hatches). Phase 12 success criteria in llm-tune map onto these three stag
 - Does the Neo4j graph sync need the new relation types, or is Postgres enough for the export?
 - Policy rules themselves (which action a subject may take on an object class): stay in Rego on the llm-tune side, or
   become `policy_rule` entities here? Proposal: Rego first; move to entities when a second owner needs to author rules.
+
+## Addendum 2026-10-30: confidence and provenance in the label
+
+Decision (llm-tune, user): the 4774-shaped label carries analytic confidence (high / moderate / low, ICD 203 evidence
+quality) and provenance (human / model / heuristic / source) as INFORMATIVE categories, plus `ncms.quality` in the 5636 core
+metadata. Informative only: affects trust and review priority, never the access decision. Likelihood of a claim is not a
+record label. The ontology store models them as category types with `type: INFORMATIVE`; precedence rules ignore them.
