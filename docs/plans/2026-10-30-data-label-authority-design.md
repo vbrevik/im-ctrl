@@ -1,7 +1,7 @@
 # Data Label Authority: im-ctrl as policy administration point for the llm-tune library
 
 **Date:** 2026-10-30
-**Status:** Requested by llm-tune DCS project (`~/projects/llm-tune/.planning/`, `docs/DCS-PLAN.md`); design draft, not approved
+**Status:** Requested by llm-tune DCS project (`~/projects/llm-tune/.planning/ROADMAP.md`, Phase 12 "im-ctrl Authority Cut-over"); design draft, not approved. Updated 2026-10-30 after the ~/projects reuse survey (`llm-tune/.planning/research/REUSE.md`).
 **Scope:** New entity types, relations, validation and an unattended export so im-ctrl becomes the system of record for
 data labels, need-to-know categories, document precedence and NCMS (STANAG 5636-shaped) core metadata. im-ctrl never
 sits on a live access decision: it authors, exports, and the consumer (llm-tune generator → signed bundle → OPA) decides.
@@ -21,9 +21,9 @@ on the llm-tune side found:
 - The usable surface is `GET /api/data/export?format=json|jsonld&types=...` (needs `settings.manage` and a session).
 - It is probably not deployed on three (unverified).
 
-Consequence: llm-tune runs phases 0–3 (label module, schemas, OPA with policy compiled from git `labels.yaml`, manifest
-and encryption) with **git as the interim writable authority**. im-ctrl is needed at the **authority cut-over** (llm-tune
-phase "im-ctrl authority track", after schema freeze, estimated weeks away). If im-ctrl is not ready then, git stays the
+Consequence: llm-tune runs its phases 1–11 (label spec and binding, schemas and manifest, OPA, generated copies, PEPs,
+projection, containment, lineage, context assembler) with **git as the interim writable authority**. im-ctrl is needed at
+**Phase 12, the authority cut-over**, a parallel track that depends only on Phase 4 (generated copies) and is estimated weeks away. If im-ctrl is not ready then, git stays the
 authority; what is lost is precedence modelling and second-owner scoping, not security.
 
 Rule inherited from the llm-tune pitfalls research: **exactly one writable authority at a time.** Every other copy
@@ -48,6 +48,11 @@ the subset test a dataset built from fmn + mip4 sources requires **both** `fmn` 
 `personal-vidar` clearance grants nothing about MIP4. A derived asset's categories are the **union** of its inputs,
 computed, never hand-declared. `public` is the empty compartment set, not a rank.
 
+Classification vocabulary: take the Norwegian levels with their legal references from
+`~/projects/risk-security-ctrl/ontology-data/nsl-sikkerhetsloven.json` (NSL § 5-3: STRENGT HEMMELIG, HEMMELIG,
+KONFIDENSIELT, BEGRENSET) plus UGRADERT, instead of the placeholder list above. `public` is validated as the empty
+category set, never as a category of its own.
+
 Policy identifier: `llm-tune-lab-v1` today; the model allows several policies (per owner, per coalition) with their own
 classification lists and category vocabularies.
 
@@ -57,10 +62,10 @@ classification lists and category vocabularies.
 
 | entity_type | purpose | key properties |
 |---|---|---|
-| `security_policy` | 4774 PolicyIdentifier | `identifier`, `version`, `description`, `owner` |
+| `security_policy` | 4774 PolicyIdentifier | `identifier`, `version`, `schema_version` (label schema the policy conforms to, frozen per llm-tune Phase 1), `frozen_at`, `description`, `owner` |
 | `classification` | ordered grading value within a policy | `rank` (int), `marking` (display text, NO/EN), `policy` (via relation) |
 | `category` | need-to-know compartment | `code`, `description`, `owner`, `clearance_group` (authentik group name) |
-| `data_asset` | anything that carries a label: dataset, record shard, model, index, projection | `identifier` (stable id = llm-tune dataset name or manifest id), `kind` (terms, passage, traj, lesson, mix, model, index), `tier_allowed` (core, fog, edge), NCMS/5636 fields below |
+| `data_asset` | anything that carries a label: dataset, record shard, model, index, projection | `identifier` (stable id = llm-tune dataset name or manifest id), `kind` (terms, passage, traj, lesson, mix, model, index), `tier_allowed` (core, fog, edge), `status` (active, tombstoned, superseded) with `status_changed_at` and `status_reason` — the tombstone lives here, outside the bound label, so revocation never invalidates bindings; NCMS/5636 fields below |
 | `document` (exists) | governing documents (CSRS Spiral 6, MIM 5.3, COPD, AJP) | add `doc_level` (policy, standard, specification, guidance, detail), `effective_from`, `effective_to`, `identifier` |
 | `owner` | corpus owner (person or organisation) for second-owner readiness | `name`, `contact`, `rights`, `permitted_purposes` |
 
@@ -91,6 +96,9 @@ the ADatP text has not been read.
 4. `governed_by` and `supersedes` graphs are acyclic.
 5. `tier_allowed` for a derived asset ⊆ intersection of its inputs' `tier_allowed`.
 6. Deleting a classification or category that is in use is refused.
+7. A `data_asset` is never deleted while referenced: it is tombstoned (`status`), and a tombstoned or superseded asset is
+   excluded from every export of active labels but kept for lineage and audit.
+8. `in_category` on an asset with the public policy level must be empty (`public` = empty set).
 
 ---
 
@@ -103,8 +111,10 @@ check on a test matrix guards the two decision engines against drift.
 Needed from im-ctrl:
 
 1. **Export scope**: `GET /api/data/export?format=jsonld&types=security_policy,classification,category,data_asset,document,owner`
-   including relations and properties above, plus an `export_revision` (monotonic counter or content hash) and the
-   exporting user. The llm-tune bundle stamps this revision into every OPA decision.
+   including relations and properties above, plus an `export_revision` (monotonic counter) **and a source-hash header**
+   (SHA-256 over the RFC 8785 canonical form of the exported graph), and the exporting user. The llm-tune generator writes
+   that hash into every generated copy (`labels.yaml`, OPA bundle) so the all-copies check (llm-tune Phase 4) can reject
+   hand edits; the bundle stamps the revision into every OPA decision.
 2. **Unattended access**, cheapest first:
    - a service-account user with `settings.manage` plus a login script that keeps a session cookie (acceptable at
      cut-over; human-gated export is acceptable before that);
@@ -138,6 +148,13 @@ be reachable by the llm-tune generator on three only. Check the memory list of t
 - [ ] Documented in `docs/` per project rule; BACKLOG.md row F.4 updated.
 
 ---
+
+## Cut-over pattern (from the reuse survey)
+
+Copy the staged cut-over proven in `~/projects/fmn_security_tests/fmn-compliance/` (`smw-authoritative.ts`,
+`src/lib/smw/cutover-gate.ts`): shadow (export runs, diff against git, nothing written) → additive (im-ctrl may add, git
+still authoritative) → authoritative (a code-enforced fresh-reconcile gate runs before any write; two explicit, audited
+escape hatches). Phase 12 success criteria in llm-tune map onto these three stages.
 
 ## Open questions
 
